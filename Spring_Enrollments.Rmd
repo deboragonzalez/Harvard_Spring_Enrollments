@@ -1,0 +1,138 @@
+---
+title: <center> Harvard Undergraduate Spring Enrollment Analysis
+author: <center> Debi Gonzalez
+date: <center> April 9, 2019
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readxl)
+library(janitor)
+library(tidyverse)
+library(gt)
+library(fs)
+library(ggthemes)
+```
+
+```{r Data Setup, echo = FALSE}
+
+# I will be comparing Harvard spring enrollment data (2018-2019) by department.
+# Because I want this data to stay current, I will use download.file to access
+# it from the Harvard data website.
+
+download.file(url = "https://registrar.fas.harvard.edu/files/fas-registrar/files/class_enrollment_summary_by_term_2.28.19.xlsx",
+              destfile = "reg_2019.xlsx",
+              mode = "wb")
+download.file(url = "https://registrar.fas.harvard.edu/files/fas-registrar/files/class_enrollment_summary_by_term_03.06.18.xlsx",
+              destfile = "reg_2018.xlsx",
+              mode = "wb")
+
+# Reading in and cleaning datasets:
+
+enrollment_19 <- read_excel("reg_2019.xlsx", skip = 3) %>%
+  clean_names() %>%
+  filter(! is.na(course_name)) %>% 
+  select(course_id, course_title, course_name, u_grad, total, course_department) 
+
+enrollment_18 <- read_excel("reg_2018.xlsx", skip = 3) %>%
+  clean_names() %>%
+  filter(! is.na(course_name)) %>% 
+  select(course_id, course_title, course_name, u_grad, total, course_department)
+
+# For each of the datasets, I used read_excel to open because they are .xlsx
+# files. I later cleaned names and filtered out all rows that had no courses in
+# them (i.e. totals, etc.). Finally, after exploring my datasets I wanted to
+# isolate the most useful variables so I picked only the variables I saw
+# potential to use in my graphic.
+  
+# I have read in the data to R objects, so I don't need the raw data anymore.
+
+file_delete(c("reg_2018.xlsx", "reg_2019.xlsx"))
+```
+<center> 
+## Department Enrollment Changes 
+### Spring 2018 - Spring 2019
+```{r Graphic, echo = FALSE, message = FALSE, fig.align="center"}
+
+# Enrrollment change from spring 2018 to spring 2019 by Department (5 biggest
+# changes - gains & losses respectively)
+
+# Before we start graphing, I need to joing my datasets and the best way to do
+# so is by course_id, which is the main shared value (course names, professors,
+# etc may change). I used an inner_join to add a suffix to each sub-column.
+# After that, I filtered for departments that remained the same because I will
+# be comparing enrollment in those departments (not those who disappeared or are
+# completely new).
+
+spring_courses <- inner_join(enrollment_19, enrollment_18, by = "course_id", suffix = c(".2019", ".2018")) %>%
+  filter(course_department.2019 == course_department.2018)
+
+# To calculate the enrollment change by department, I will group_by department
+# (it can be 2019 because I have previously set them equal to each other) and
+# then find the difference between undergraduate enrollment (2018 & 2019). Now,
+# because I have it grouped by department if I sum this "change", it will
+# provide me with the enrollment change (or difference) by department. Now, I
+# arrange it in descending order to extract the most change (positive and
+# negative) for the purpose of the graph. Arranging will help to isolate the extremes.
+
+dept_change <- spring_courses %>%
+  group_by(course_department.2019) %>% 
+  mutate(change = u_grad.2019 - u_grad.2018) %>%
+  summarize(dept_change = sum(change)) %>% 
+  arrange(desc(dept_change))
+  
+
+# Choosing the 5 departments with most gains 
+
+  pos_5 <- dept_change %>% head(n = 5)
+
+# Choosing the 5 departments with most losses
+  
+  neg_5 <- dept_change %>% tail(n = 5)
+
+# Now, I'm combining the top 5 growing departments and bottom 5 decreasing
+# departments with a full_join. Then, I factor reorder the departments to make a
+# visually appealing graphic (by dept_change). Finally, I'm adding a column
+# which gives 1 if the dept_change > 0 (changed positvely), 0 otherwise (changed
+# negatively) to help color the graphic later.
+  
+most_changed <- full_join(pos_5, neg_5) %>%
+  mutate(course_department.2019 = fct_reorder(course_department.2019, dept_change)) %>%
+  mutate(gain = ifelse(dept_change > 0 , 1, 0))
+
+# The data is ready to be graphed. I will use ggplot and geom_col to graphically
+# show the undergrad enrollment changes by department. The department will go on
+# the x axis and the department change on the y. fill can be assigned to
+# dept_change or gain (the newly created variable that tells whether the
+# department is gaining or losing students). I choose dept_change to better show
+# the gradient of change. I hid the legend because it only shows enrollment
+# change number in relation to the color which is clear through the axis
+# themselves. Flipping coordinates helps visualization of the information and
+# facilitates comparison. I decided to use the economist theme for an
+# aesthetically pleasant and professional graphic that is accessible to the lay
+# person (for the most part). Theme can also help to format axis tick labels and
+# positionality within the graph, so I used it to make my labels bold. Finally,
+# I added a y-axis label to describe the enrollment change, a title, and
+# subtitle that explains my data visual. The caption includes source and dates.
+
+most_changed %>% 
+     ggplot(aes( x = course_department.2019, y = dept_change, fill = dept_change)) + 
+     geom_col(show.legend = FALSE) +
+     coord_flip() +
+     theme_economist() +
+     theme(axis.text.y = element_text(face = "bold", angle = 0),
+           axis.text.x = element_text(face = "bold", angle = 0)) +
+     labs(x = NULL,
+          y = "Undergraduate Enrollment Change",
+          title = "Harvard Department Enrollment Changes",
+          subtitle = "departments with the greatest gains & losses of undergraduate enrollees",
+          caption = "Source: Harvard Registrar
+          Spring 2018-Spring 2019")
+  
+# Overall, this graphic shows interesting patterns in undergraduate course
+# enrollment at Harvard that may moticate further research.
+  
+
+```
+
